@@ -1,0 +1,16 @@
+{
+  "name": "hooks-skills-test-marketplace",
+  "owner": {
+    "name": "Ronnie Geraghty"
+  },
+  "metadata": {
+    "description": "Marketplace for the hooks-skills-test plugin — ships skills and hooks together."
+  },
+  "plugins": [
+    {
+      "name": "hooks-skills-test",
+      "source": "./",
+      "description": "Skills for project architecture, coding conventions, and error handling patterns, plus preToolUse/postToolUse audit hooks."
+    }
+  ]
+}
