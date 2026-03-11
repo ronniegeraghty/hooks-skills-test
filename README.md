@@ -1,51 +1,126 @@
-# Hooks + Skills Test Project
+# Copilot CLI Hooks + Skills Test
 
-Tests whether Copilot CLI `preToolUse` and `postToolUse` hooks fire when skills are activated.
+An experiment to answer: **do Copilot CLI `preToolUse` / `postToolUse` hooks fire when skills are activated?**
 
-## Structure
+**TL;DR — Yes, they do.** Skill activation appears as a tool call with `toolName: "skill"` in both `preToolUse` and `postToolUse` hooks.
+
+## Background
+
+[GitHub Copilot CLI](https://docs.github.com/en/copilot/using-github-copilot/using-github-copilot-in-the-command-line) supports two extensibility mechanisms:
+
+- **Hooks** (`preToolUse` / `postToolUse`) — shell scripts that run before and after every tool call the agent makes. Configured in `.github/hooks/hooks.json`.
+- **Skills** — markdown files (`SKILL.md`) that inject contextual knowledge into the agent when relevant prompts are detected. Defined in `.github/skills/`.
+
+This repo tests whether invoking a skill triggers the hook pipeline, or if skills are silently injected without appearing as a tool use event.
+
+## Project Structure
 
 ```
-.github/
-├── hooks/
-│   ├── hooks.json              # Hook configuration (preToolUse + postToolUse)
-│   ├── logs/                   # Hook event logs (gitignored)
-│   └── scripts/
-│       ├── pre-tool-log.sh     # Logs every tool call BEFORE execution
-│       └── post-tool-log.sh    # Logs every tool call AFTER execution
-└── skills/
-    ├── project-architecture/SKILL.md   # Context about project structure
-    ├── coding-conventions/SKILL.md     # Context about code style rules
-    └── error-handling-patterns/SKILL.md # Context about error handling
+.
+├── sample.py                              # Sample Python module (skills reference this)
+├── .gitignore
+└── .github/
+    ├── hooks/
+    │   ├── hooks.json                     # Hook configuration
+    │   ├── logs/                          # Hook event logs (gitignored)
+    │   └── scripts/
+    │       ├── pre-tool-log.sh            # Logs every tool call BEFORE execution
+    │       └── post-tool-log.sh           # Logs every tool call AFTER execution
+    └── skills/
+        ├── project-architecture/SKILL.md  # Context about project structure
+        ├── coding-conventions/SKILL.md    # Context about code style rules
+        └── error-handling-patterns/SKILL.md # Context about error handling
 ```
 
-## How to Test
+### Hooks
 
-1. `cd` into this directory so Copilot CLI picks up the hooks and skills.
-2. Start a Copilot CLI session.
-3. Try prompts that should trigger skill activation (context injection):
-   - **project-architecture**: "How is this project structured?"
-   - **coding-conventions**: "What coding style does this project use?"
-   - **error-handling-patterns**: "How does this project handle errors?"
-4. Check the log file for hook events:
+Both hook scripts read the JSON event from stdin and append a structured log entry to `.github/hooks/logs/hook-events.jsonl`. They use `python3` for JSON parsing (no `jq` dependency required).
+
+**`hooks.json`** registers two hooks:
+
+```json
+{
+  "hooks": {
+    "preToolUse":  [{ "type": "command", "bash": "./scripts/pre-tool-log.sh" }],
+    "postToolUse": [{ "type": "command", "bash": "./scripts/post-tool-log.sh" }]
+  }
+}
+```
+
+### Skills
+
+Three skills provide contextual knowledge about the project. Each is a standalone `SKILL.md` with YAML frontmatter (`name`, `description`) and markdown body:
+
+| Skill | Triggers On |
+|-------|------------|
+| `project-architecture` | "How is this project structured?" |
+| `coding-conventions` | "What coding style does this project use?" |
+| `error-handling-patterns` | "How does this project handle errors?" |
+
+## How to Reproduce
+
+### Prerequisites
+
+- [GitHub Copilot CLI](https://docs.github.com/en/copilot/using-github-copilot/using-github-copilot-in-the-command-line) installed and authenticated
+- Python 3 available on your `PATH` (used by the hook scripts for JSON parsing)
+
+### Steps
+
+1. **Clone the repo and `cd` into it** — Copilot CLI automatically discovers `.github/hooks/` and `.github/skills/` relative to the working directory.
+
    ```bash
-   cat .github/hooks/logs/hook-events.jsonl
+   git clone https://github.com/ronniegeraghty/hooks-skills-test.git
+   cd hooks-skills-test
    ```
 
-## What to Look For
+2. **Start a Copilot CLI session** in this directory.
 
-Each line in `hook-events.jsonl` is a JSON object with:
-- `event`: `"preToolUse"` or `"postToolUse"`
-- `toolName`: The tool that was called
-- `toolArgs`: The arguments passed to the tool
-- `resultType` (postToolUse only): `"success"` or `"failure"`
+3. **Ask a question that triggers a skill**, for example:
 
-The key question: **does skill activation itself show up as a tool use in the hooks?**
-Skills are purely contextual — they inject knowledge into the agent's context
-rather than invoking tools. If hooks fire, you'll see a `toolName` related to
-skill loading. If they don't, the log will only contain entries for any tools
-the agent decides to use on its own after reading the skill context.
+   ```
+   How is this project structured?
+   ```
+
+   This should activate the `project-architecture` skill and inject its context.
+
+4. **Inspect the hook log** to see what events were captured:
+
+   ```bash
+   cat .github/hooks/logs/hook-events.jsonl | python3 -m json.tool --no-ensure-ascii
+   ```
+
+### What to Expect
+
+Each line in `hook-events.jsonl` is a JSON object:
+
+```jsonc
+// preToolUse fires BEFORE the skill is invoked
+{ "event": "preToolUse",  "toolName": "skill", "toolArgs": "{\"skill\": \"project-architecture\"}", ... }
+
+// postToolUse fires AFTER the skill completes
+{ "event": "postToolUse", "toolName": "skill", "toolArgs": { "skill": "project-architecture" }, "resultType": "success" }
+```
+
+Key fields:
+- **`event`** — `"preToolUse"` or `"postToolUse"`
+- **`toolName`** — the tool that was called (`"skill"` for skill activation, `"bash"`, `"view"`, etc. for other tools)
+- **`toolArgs`** — arguments passed to the tool (for skills, this includes the skill name)
+- **`resultType`** (postToolUse only) — `"success"` or `"failure"`
+
+## Results
+
+**Skills do trigger hooks.** When Copilot CLI activates a skill, it appears as a tool call with `toolName: "skill"` in both the `preToolUse` and `postToolUse` hook pipelines. This means you can:
+
+- **Audit** which skills are being activated and when
+- **Log** skill usage alongside other tool calls for observability
+- **Conditionally modify** skill behavior via hook responses (e.g., reject a skill activation by returning a non-zero exit code from a `preToolUse` hook)
+
+Other tool calls made by the agent (e.g., `view`, `bash`, `report_intent`) also appear in the log, giving full visibility into the agent's actions.
 
 ## Sample File
 
-`sample.py` contains a small math module with TODO/FIXME/HACK comments
-that the skills reference.
+`sample.py` is a small Python math module with `TODO`/`FIXME`/`HACK` comments that the skills reference. It exists to give the skills realistic content to describe.
+
+## License
+
+This is an experiment / reference implementation. Use it however you like.
