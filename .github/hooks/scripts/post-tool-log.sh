@@ -1,25 +1,24 @@
 #!/bin/bash
 set -euo pipefail
 
-INPUT=$(cat)
-TOOL_NAME=$(echo "$INPUT" | jq -r '.toolName')
-TOOL_ARGS=$(echo "$INPUT" | jq -r '.toolArgs')
-RESULT_TYPE=$(echo "$INPUT" | jq -r '.toolResult.resultType')
-TIMESTAMP=$(echo "$INPUT" | jq -r '.timestamp')
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+LOG_DIR="$SCRIPT_DIR/../logs"
+mkdir -p "$LOG_DIR"
 
-mkdir -p "$(dirname "$0")/../logs"
-
-# Log the post-tool event
-jq -n -c \
-  --arg event "postToolUse" \
-  --arg ts "$TIMESTAMP" \
-  --arg tool "$TOOL_NAME" \
-  --arg args "$TOOL_ARGS" \
-  --arg result "$RESULT_TYPE" \
-  '{event: $event, timestamp: $ts, toolName: $tool, toolArgs: $args, resultType: $result}' \
-  >> "$(dirname "$0")/../logs/hook-events.jsonl"
-
-# Also print to stderr so it shows up in the terminal
-echo "🟢 [postToolUse] tool=$TOOL_NAME result=$RESULT_TYPE" >&2
+python3 -c "
+import json, sys
+data = json.load(sys.stdin)
+result_type = (data.get('toolResult') or {}).get('resultType')
+entry = {
+    'event': 'postToolUse',
+    'timestamp': data.get('timestamp'),
+    'toolName': data.get('toolName'),
+    'toolArgs': data.get('toolArgs'),
+    'resultType': result_type,
+}
+with open('$LOG_DIR/hook-events.jsonl', 'a') as f:
+    f.write(json.dumps(entry) + '\n')
+print(f'🟢 [postToolUse] tool={data.get(\"toolName\")} result={result_type}', file=sys.stderr)
+"
 
 exit 0

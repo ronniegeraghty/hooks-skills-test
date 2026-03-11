@@ -1,23 +1,22 @@
 #!/bin/bash
 set -euo pipefail
 
-INPUT=$(cat)
-TOOL_NAME=$(echo "$INPUT" | jq -r '.toolName')
-TOOL_ARGS=$(echo "$INPUT" | jq -r '.toolArgs')
-TIMESTAMP=$(echo "$INPUT" | jq -r '.timestamp')
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+LOG_DIR="$SCRIPT_DIR/../logs"
+mkdir -p "$LOG_DIR"
 
-mkdir -p "$(dirname "$0")/../logs"
-
-# Log the pre-tool event
-jq -n -c \
-  --arg event "preToolUse" \
-  --arg ts "$TIMESTAMP" \
-  --arg tool "$TOOL_NAME" \
-  --arg args "$TOOL_ARGS" \
-  '{event: $event, timestamp: $ts, toolName: $tool, toolArgs: $args}' \
-  >> "$(dirname "$0")/../logs/hook-events.jsonl"
-
-# Also print to stderr so it shows up in the terminal
-echo "🔵 [preToolUse] tool=$TOOL_NAME" >&2
+python3 -c "
+import json, sys
+data = json.load(sys.stdin)
+entry = {
+    'event': 'preToolUse',
+    'timestamp': data.get('timestamp'),
+    'toolName': data.get('toolName'),
+    'toolArgs': data.get('toolArgs'),
+}
+with open('$LOG_DIR/hook-events.jsonl', 'a') as f:
+    f.write(json.dumps(entry) + '\n')
+print(f'🔵 [preToolUse] tool={data.get(\"toolName\")}', file=sys.stderr)
+"
 
 exit 0
