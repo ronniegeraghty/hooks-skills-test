@@ -1,10 +1,11 @@
 {
   "name": "hooks-skills-test",
   "description": "A plugin with skills and hooks for auditing Copilot CLI tool usage on a sample Python project.",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "author": {
     "name": "Ronnie Geraghty"
   },
   "keywords": ["hooks", "skills", "auditing", "python"],
-  "skills": "./.github/skills/"
+  "skills": "./.github/skills/",
+  "hooks": "./.github/hooks/"
 }
